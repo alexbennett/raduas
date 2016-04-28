@@ -1,7 +1,7 @@
-#define THRO_PIN 3
-#define AILE_PIN 4
-#define ELEV_PIN 5
-#define RUDD_PIN 6
+#define THRO_PIN 10
+#define AILE_PIN 13
+#define ELEV_PIN 12
+#define RUDD_PIN 11
 #define GEAR_PIN 7
 #define AUX_PIN  8
 
