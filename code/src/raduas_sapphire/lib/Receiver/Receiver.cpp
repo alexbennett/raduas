@@ -9,52 +9,127 @@
 
 #include "Receiver.h"
 
-Receiver::Receiver(uint8_t ch1_pin, uint8_t ch2_pin, uint8_t ch3_pin, uint8_t ch4_pin)
+Receiver::Receiver()
 {
-    this->_ch1_pin = ch1_pin;
-    this->_ch2_pin = ch2_pin;
-    this->_ch3_pin = ch3_pin;
-    this->_ch4_pin = ch4_pin;
+    // Set initial values
+    this->_throttle_value = 0;
+    this->_throttle_status = 0;
+    this->_throttle_timer = 0;
+    this->_yaw_value = 0;
+    this->_yaw_status = 0;
+    this->_yaw_timer = 0;
+    this->_pitch_value = 0;
+    this->_pitch_status = 0;
+    this->_pitch_timer = 0;
+    this->_roll_value = 0;
+    this->_roll_status = 0;
+    this->_roll_timer = 0;
 
-    pinMode(this->_ch1_pin, INPUT);
-    pinMode(this->_ch2_pin, INPUT);
-    pinMode(this->_ch3_pin, INPUT);
-    pinMode(this->_ch4_pin, INPUT);
+    // Set pins to inputs with pull-up resistors
+    pinMode(A8, INPUT_PULLUP);
+    pinMode(A9, INPUT_PULLUP);
+    pinMode(A10, INPUT_PULLUP);
+    pinMode(A11, INPUT_PULLUP);
+
+    // Setup pin change interrupts
+    PCICR |= (1 << PCIE2); // Enable PCMSK2
+    PCMSK2 |= (1 << PCINT16); // Enable PCINT16 (A8)
+    PCMSK2 |= (1 << PCINT17); // Enable PCINT17 (A9)
+    PCMSK2 |= (1 << PCINT18); // Enable PCINT18 (A10)
+    PCMSK2 |= (1 << PCINT19); // Enable PCINT19 (A11)
 }
 
-void Receiver::update()
+void Receiver::handleInterrupt()
 {
-    *(this->_ch1_ptr) = pulseIn(this->_ch1_pin, HIGH);
-    *(this->_ch2_ptr) = pulseIn(this->_ch2_pin, HIGH);
-    *(this->_ch3_ptr) = pulseIn(this->_ch3_pin, HIGH);
-    *(this->_ch4_ptr) = pulseIn(this->_ch4_pin, HIGH);
-}
-
-void Receiver::setMinValue(uint8_t min_value)
-{
-
-}
-
-void Receiver::setMaxValue(uint8_t max_value)
-{
-
-}
-
-void Receiver::setChannelPtr(uint8_t channel, int* ptr)
-{
-    switch(channel)
+    // Read throttle
+    if(this->_throttle_status == 0 && (PINK & 0x01)) // Pin rose
     {
-        case 1:
-            this->_ch1_ptr = ptr;
-            break;
-        case 2:
-            this->_ch2_ptr = ptr;
-            break;
-        case 3:
-            this->_ch3_ptr = ptr;
-            break;
-        case 4:
-            this->_ch4_ptr = ptr;
-            break;
+        // Set status to HIGH
+        this->_throttle_status = 1;
+
+        // Start timing
+        this->_throttle_timer = micros();
     }
+    else if(this->_throttle_status == 1 && !(PINK & 0x01)) // Pin fell
+    {
+        // Set status to LOW
+        this->_throttle_status = 0;
+
+        // Stop timing and set the throttle value
+        this->_throttle_value = micros() - this->_throttle_timer;
+    }
+
+    // Read yaw
+    if(!this->_yaw_status && (PINK & 0x02)) // Pin rose
+    {
+        // Set status to HIGH
+        this->_yaw_status = 1;
+
+        // Start timing
+        this->_yaw_timer = micros();
+    }
+    else if(this->_yaw_status && !(PINK & 0x02)) // Pin fell
+    {
+        // Set status to LOW
+        this->_yaw_status = 0;
+
+        // Stop timing and set the throttle value
+        this->_yaw_value = micros() - this->_yaw_timer;
+    }
+
+    // Read pitch
+    if(!this->_pitch_status && (PINK & 0x04)) // Pin rose
+    {
+        // Set status to HIGH
+        this->_pitch_status = 1;
+
+        // Start timing
+        this->_pitch_timer = micros();
+    }
+    else if(this->_pitch_status && !(PINK & 0x04)) // Pin fell
+    {
+        // Set status to LOW
+        this->_pitch_status = 0;
+
+        // Stop timing and set the throttle value
+        this->_pitch_value = micros() - this->_pitch_timer;
+    }
+
+    // Read roll
+    if(!this->_roll_status && (PINK & 0x08)) // Pin rose
+    {
+        // Set status to HIGH
+        this->_roll_status = 1;
+
+        // Start timing
+        this->_roll_timer = micros();
+    }
+    else if(this->_roll_status && !(PINK & 0x08)) // Pin fell
+    {
+        // Set status to LOW
+        this->_roll_status = 0;
+
+        // Stop timing and set the throttle value
+        this->_roll_value = micros() - this->_roll_timer;
+    }
+}
+
+int Receiver::getThrottle()
+{
+    return this->_throttle_value;
+}
+
+int Receiver::getYaw()
+{
+    return this->_yaw_value;
+}
+
+int Receiver::getPitch()
+{
+    return this->_pitch_value;
+}
+
+int Receiver::getRoll()
+{
+    return this->_roll_value;
 }

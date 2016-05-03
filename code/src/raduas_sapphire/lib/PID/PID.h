@@ -39,7 +39,10 @@ private:
     double *_output_ptr;
 
     double _kp, _ki, _kd;
-    double _lower_limit, _upper_limit;
+    int _lower_limit, _upper_limit;
+
+    double _previous_input;
+    double _integration_term;
 };
 
 #endif

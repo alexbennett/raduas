@@ -1,7 +1,4 @@
-#include <Arduino.h>
-
 #include "Config.h"
-#include "PID.h"
 #include <Servo.h>
 #include <I2Cdev.h>
 #include <MPU6050_6Axis_MotionApps20.h>
@@ -19,7 +16,7 @@ int right_esc_value = 700;
 int throttle = 900;
 float input = 0;
 float output = 0;
-PID pitch_pid(&input, &output, 0, 1.8, 0.04, 60, -200, 200, 0.001); // Current ideal: 2.3 0.07 124
+//PID pitch_pid(&input, &output, 0, 1.8, 0.04, 60, -200, 200, 0.001); // Current ideal: 2.3 0.07 124
 
 // Create MPU object
 MPU6050 mpu;
@@ -100,6 +97,7 @@ void setup()
     Serial.println(".");
   }
 
+  /*
   // Setup PID related things
   left_esc.attach(LEFT_ESC_PIN);
   right_esc.attach(RIGHT_ESC_PIN);
@@ -110,6 +108,7 @@ void setup()
   // Wait for push button to begin program
   Serial.println("Press button to start...");
   while(digitalRead(START_BTN_PIN));
+  */
 }
 
 void loop()
@@ -156,14 +155,17 @@ void processPID()
 
   float pitch = ypr[1] * 180/M_PI;
 
+  Serial.println(pitch);
+
+  /*
   // Update the input to the current pitch
   input = pitch;
 
   // Run calculation
   pitch_pid.calculate();
 
-  left_esc.writeMicroseconds(throttle - output);
-  right_esc.writeMicroseconds(throttle + output);
+  //left_esc.writeMicroseconds(throttle - output);
+  //right_esc.writeMicroseconds(throttle + output);
 
   Serial.println("Pitch: " + String(pitch) + ", PID output: " + String(output) + ", Kp: " + String(pitch_pid.getKp())  + ", Ki: " + String(pitch_pid.getKi())  + ", Kd: " + String(pitch_pid.getKd()));
 
@@ -175,5 +177,6 @@ void processPID()
     pitch_pid.setKi(Serial.parseFloat());
     pitch_pid.setKd(Serial.parseFloat());
   }
+  */
 }
 
