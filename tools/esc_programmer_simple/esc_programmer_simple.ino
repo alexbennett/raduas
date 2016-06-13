@@ -6,7 +6,7 @@ int esc_value = 0;
 void setup() 
 {
   Serial.begin(9600);
-  esc.attach(6);
+  esc.attach(7);
 }
 
 void loop() 

@@ -3,3 +3,6 @@
 .pioenvs
 .clang_complete
 .gcc-flags.json
+code/test/mpu_library/.travis.yml
+code/test/mpu_library/lib/readme.txt
+code/test/rc_receiver_dev/.travis.yml

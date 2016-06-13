@@ -15,7 +15,7 @@
 class PID
 {
 public:
-    PID(double*, double*, double, double, double, double, int, int);
+    PID(double*, double*, double, double, double, double, int, int, uint8_t);
 
     void update();
 
@@ -43,6 +43,9 @@ private:
 
     double _previous_input;
     double _integration_term;
+
+    uint32_t _last_run;
+    uint8_t _update_delay;
 };
 
 #endif

@@ -9,7 +9,7 @@
 
 #include "PID.h"
 
-PID::PID(double *input_ptr, double *output_ptr, double set_point, double kp, double ki, double kd, int lower_limit, int upper_limit)
+PID::PID(double *input_ptr, double *output_ptr, double set_point, double kp, double ki, double kd, int lower_limit, int upper_limit, uint8_t update_delay)
 {
     this->_input_ptr = input_ptr;
     this->_output_ptr = output_ptr;
@@ -19,6 +19,9 @@ PID::PID(double *input_ptr, double *output_ptr, double set_point, double kp, dou
     this->_kd = kd;
     this->_lower_limit = lower_limit;
     this->_upper_limit = upper_limit;
+    this->_update_delay = update_delay;
+
+    this->_last_run = 0;
 }
 
 /**
@@ -26,36 +29,43 @@ PID::PID(double *input_ptr, double *output_ptr, double set_point, double kp, dou
  */
 void PID::update()
 {
-    // First calculate current error
-    double error = this->_set_point - *this->_input_ptr;
-
-    // Update error over time (integration term)
-    this->_integration_term += error;
-
-    // Calculate P value
-    double p_value = this->_kp * error;
-
-    // Calculate I value
-    double i_value = this->_ki * this->_integration_term;
-
-    // Verify I value
-    if(i_value > this->_upper_limit)
+    // Only run at specified frequency
+    if(millis() > this->_last_run + this->_update_delay)
     {
-        i_value = this->_upper_limit;
+        // First calculate current error
+        double error = this->_set_point - *this->_input_ptr;
+
+        // Update error over time (integration term)
+        this->_integration_term += error;
+
+        // Calculate P value
+        double p_value = this->_kp * error;
+
+        // Calculate I value
+        double i_value = this->_ki * this->_integration_term;
+
+        // Verify I value
+        if(i_value > this->_upper_limit)
+        {
+            i_value = this->_upper_limit;
+        }
+        else if(i_value < this->_lower_limit)
+        {
+            i_value = this->_lower_limit;
+        }
+
+        // Calculate D value
+        double d_value = this->_kd * (*this->_input_ptr - this->_previous_input);
+
+        // Set the output
+        *this->_output_ptr = p_value + i_value + d_value;
+
+        // Update necessary value storage
+        this->_previous_input = *this->_input_ptr;
+
+        // Update last run
+        this->_last_run = millis();
     }
-    else if(i_value < this->_lower_limit)
-    {
-        i_value = this->_lower_limit;
-    }
-
-    // Calculate D value
-    double d_value = this->_kd * (*this->_input_ptr - this->_previous_input);
-
-    // Set the output
-    *this->_output_ptr = p_value + i_value + d_value;
-
-    // Update necessary value storage
-    this->_previous_input = *this->_input_ptr;
 }
 
 /**

@@ -22,21 +22,22 @@ Receiver receiver;
 #define THROTTLE_ON_POSITION 1100
 
 // Define PID constants
-#define YAW_PID_KP 0.5
-#define YAW_PID_KI 1.1
-#define YAW_PID_KD 1.0
+#define YAW_PID_KP 0
+#define YAW_PID_KI 0
+#define YAW_PID_KD 0
 #define YAW_PID_INITIAL_SETPOINT 0
-#define PITCH_PID_KP 0.5
-#define PITCH_PID_KI 1.1
-#define PITCH_PID_KD 1.6
+
+#define PITCH_PID_KP 5.2
+#define PITCH_PID_KI 0.01
+#define PITCH_PID_KD 0
 #define PITCH_PID_INITIAL_SETPOINT 0
-#define ROLL_PID_KP 0.5
-#define ROLL_PID_KI 1.1
-#define ROLL_PID_KD 1.6
+
+#define ROLL_PID_KP 5.2
+#define ROLL_PID_KI 0.01
+#define ROLL_PID_KD 0
 #define ROLL_PID_INITIAL_SETPOINT 0
 
 // Define PID-related variables
-#define UPDATE_FREQ 1000 // Hz
 double yaw_input = 0;
 double yaw_output = 0;
 double pitch_input = 0;
@@ -45,15 +46,15 @@ double roll_input = 0;
 double roll_output = 0;
 
 // Create PIDs
-PID yaw_pid(&yaw_input, &yaw_output, YAW_PID_INITIAL_SETPOINT, YAW_PID_KP, YAW_PID_KI, YAW_PID_KD, 0, 1000);
-PID pitch_pid(&pitch_input, &pitch_output, PITCH_PID_INITIAL_SETPOINT, PITCH_PID_KP, PITCH_PID_KI, PITCH_PID_KD, 0, 1000);
-PID roll_pid(&roll_input, &roll_output, ROLL_PID_INITIAL_SETPOINT, ROLL_PID_KP, ROLL_PID_KI, ROLL_PID_KD, 0, 1000);
+PID yaw_pid(&yaw_input, &yaw_output, YAW_PID_INITIAL_SETPOINT, YAW_PID_KP, YAW_PID_KI, YAW_PID_KD, 0, 200, 50);
+PID pitch_pid(&pitch_input, &pitch_output, PITCH_PID_INITIAL_SETPOINT, PITCH_PID_KP, PITCH_PID_KI, PITCH_PID_KD, 0, 200, 50);
+PID roll_pid(&roll_input, &roll_output, ROLL_PID_INITIAL_SETPOINT, ROLL_PID_KP, ROLL_PID_KI, ROLL_PID_KD, 0, 200, 50);
 
 // Setup ESCs and speeds
-#define FRONT_MOTOR_PIN 6
-#define REAR_MOTOR_PIN 7
-#define LEFT_MOTOR_PIN 8
-#define RIGHT_MOTOR_PIN 9
+#define FRONT_MOTOR_PIN 8
+#define REAR_MOTOR_PIN 9
+#define LEFT_MOTOR_PIN 7
+#define RIGHT_MOTOR_PIN 6
 
 Servo front_motor, rear_motor, left_motor, right_motor;
 
@@ -80,7 +81,10 @@ float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gra
 volatile bool mpuInterrupt = false;
 
 // Create prototypes
-void updateYPR();
+void calibrateIMU();
+void calculatePID();
+void updateYPRInputs();
+void updateMotors();
 void printInfo(String);
 void printWarning(String);
 void printError(String);
@@ -108,40 +112,11 @@ void setup()
     right_motor.writeMicroseconds(MIN_THROTTLE_POSITION);
 
     /*************************************
-     *** Setup update timer interrupts ***
-     *************************************/
-    // Disable interrupts
-    cli();
-    // Reset TCCR2 registers to 0
-    TCCR2A = 0;
-	TCCR2B = 0;
-
-    // Set compare registers for TIMER2
-    OCR2A = 15625 / UPDATE_FREQ; // clock_frequency / desired_frequency
-
-    // Enable clear timer mode (CTC)
-	TCCR2B |= (1 << WGM22);
-
-    // Set prescale to 1024
-    TCCR2B |= (1 << CS20);
-	TCCR2B |= (1 << CS22);
-
-    // Finally, enable the compare interrupt
-	TIMSK2 |= (1 << OCIE2A);
-
-    // Re-enable interrupts
-    sei();
-    /*********************************
-     *** End timer interrupt setup ***
-     *********************************/
-
-    /*************************************
      ************* Setup IMU *************
      *************************************/
     // Begin I2C communication
     Wire.begin();
-    TWBR = 12;
-    //Wire.setClock(400000);
+    Wire.setClock(400000);
 
     // Initialize MPU
     printInfo("Initializing the MPU...");
@@ -159,12 +134,6 @@ void setup()
 
     // Initialize the DMP
     deviceStatus = mpu.dmpInitialize();
-
-    // Set offsets
-    //mpu.setXGyroOffset(50);
-    //mpu.setYGyroOffset(0);
-    //mpu.setZGyroOffset(0);
-    //mpu.setZAccelOffset(0);
 
     // Check IMU status and react accordingly
     if(deviceStatus == 0)
@@ -185,6 +154,15 @@ void setup()
 
         // Set expected packet size
         packetSize = mpu.dmpGetFIFOPacketSize();
+
+        // Run calibration to set offsets
+        //calibrateIMU();
+        mpu.setXAccelOffset(-5756);
+        mpu.setYAccelOffset(-309);
+        mpu.setZAccelOffset(1511);
+        mpu.setXGyroOffset(90);
+        mpu.setYGyroOffset(-11);
+        mpu.setZGyroOffset(-32);
     }
     else
     {
@@ -196,46 +174,45 @@ void setup()
      *********** End IMU setup ***********
      *************************************/
 
-    // TODO: Wait for user to arm the device (throttle off and to the right)
     printInfo("Waiting for arming signal...");
     while(receiver.getThrottle() != 0 && (receiver.getThrottle() > 1100 || receiver.getYaw() > 1200));
-
     printInfo("System armed.");
 }
 
 void loop()
 {
     // Return until the DMP is ready
-    if(!dmpReady) return;
-
-    // Reset interrupt status flag
-    mpuInterrupt = false;
-    mpuIntStatus = mpu.getIntStatus();
-
-    // Get FIFO count
-    fifoCount = mpu.getFIFOCount();
-
-    // Check for overflow just in case
-    if((mpuIntStatus & 0x10) || fifoCount == 1024)
+    if(dmpReady)
     {
-        // Reset FIFO
-        mpu.resetFIFO();
-        printWarning("FIFO overflow");
-    }
-    else if(mpuIntStatus & 0x02)
-    {
-        // Wait to fill FIFO packet
-        while(fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
+        // Reset interrupt status flag
+        mpuInterrupt = false;
+        mpuIntStatus = mpu.getIntStatus();
 
-        // Packet is ready, read it now
-        mpu.getFIFOBytes(fifoBuffer, packetSize);
-        mpu.resetFIFO();
+        // Get FIFO count
+        fifoCount = mpu.getFIFOCount();
 
-        // Allows for immediate reading of another available packet without an interrupt
-        fifoCount -= packetSize;
+        // Check for overflow just in case
+        if((mpuIntStatus & 0x10) || fifoCount == 1024)
+        {
+            // Reset FIFO
+            mpu.resetFIFO();
+            printWarning("FIFO overflow");
+        }
+        else if(mpuIntStatus & 0x02)
+        {
+            // Wait to fill FIFO packet
+            while(fifoCount < packetSize) fifoCount = mpu.getFIFOCount();
 
-        // Update yaw, pitch, and roll for the PID
-        updateYPR();
+            // Packet is ready, read it now
+            mpu.getFIFOBytes(fifoBuffer, packetSize);
+            mpu.resetFIFO();
+
+            // Allows for immediate reading of another available packet without an interrupt
+            fifoCount -= packetSize;
+
+            // Update yaw, pitch, and roll for the PID
+            updateYPRInputs();
+        }
     }
 
     if(receiver.getThrottle() < THROTTLE_ON_POSITION)
@@ -248,18 +225,40 @@ void loop()
     }
     else
     {
-        //front_motor.writeMicroseconds(receiver.getThrottle());
-        //rear_motor.writeMicroseconds(receiver.getThrottle());
+        uint16_t throttle = receiver.getThrottle();
+        uint16_t fl_motor_speed, fr_motor_speed, bl_motor_speed, br_motor_speed;
 
-        int output1 = 1200 - pitch_output;
-        int output2 = 1200 + pitch_output;
+        // Limit max throttle to allow room for PID adjustment
+        if(throttle > 1800) throttle = 1800;
 
-        left_motor.writeMicroseconds(output1);
-        right_motor.writeMicroseconds(output2);
+        // Perform kinematic calculations
+        fl_motor_speed = throttle + pitch_output;
+        fr_motor_speed = throttle - roll_output;
+        bl_motor_speed = throttle + roll_output;
+        br_motor_speed = throttle - pitch_output;
 
-        printInfo("Throttle: " + String(receiver.getThrottle()) + ", Output 1: " + String(output1) + ", Output 2: " + String(output2));
+        // Don't let the PID dip below the minimum ESC pulse length
+        if(fl_motor_speed < 1200) fl_motor_speed = 1200;
+        if(fr_motor_speed < 1200) fr_motor_speed = 1200;
+        if(bl_motor_speed < 1200) bl_motor_speed = 1200;
+        if(br_motor_speed < 1200) br_motor_speed = 1200;
+
+        // Don't let the PID rise above the maximum ESC pulse length
+        if(fl_motor_speed > 2000) fl_motor_speed = 2000;
+        if(fr_motor_speed > 2000) fr_motor_speed = 2000;
+        if(bl_motor_speed > 2000) bl_motor_speed = 2000;
+        if(br_motor_speed > 2000) br_motor_speed = 2000;
+
+        front_motor.writeMicroseconds(fl_motor_speed);
+        right_motor.writeMicroseconds(fr_motor_speed);
+        left_motor.writeMicroseconds(bl_motor_speed);
+        rear_motor.writeMicroseconds(br_motor_speed);
+
+        printInfo("Throttle: " + String(receiver.getThrottle()) + ", FL: " + String(fl_motor_speed) + ", FR: " + String(fr_motor_speed) + ", BL: " + String(bl_motor_speed) + ", BR: " + String(br_motor_speed));
     }
 
+    // Calculate PID
+    calculatePID();
 }
 
 /**
@@ -271,9 +270,21 @@ ISR(PCINT2_vect)
 }
 
 /**
- * Update PIDs based on overflow of TIMER2
+ * Calibrates the IMU offsets
  */
-ISR(TIMER2_COMPA_vect)
+void calibrateIMU()
+{
+    // Set offsets
+    mpu.setXGyroOffset(0);
+    mpu.setYGyroOffset(0);
+    mpu.setZGyroOffset(0);
+    mpu.setZAccelOffset(0);
+}
+
+/**
+ * Run PID calculation updates
+ */
+void calculatePID()
 {
     yaw_pid.update();
     pitch_pid.update();
@@ -283,7 +294,7 @@ ISR(TIMER2_COMPA_vect)
 /**
  * Updates the inputs to PID
  */
-void updateYPR()
+void updateYPRInputs()
 {
     // Grab yaw, pitch, and roll
     mpu.dmpGetQuaternion(&q, fifoBuffer);
